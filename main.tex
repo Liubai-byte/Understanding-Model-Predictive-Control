@@ -1,0 +1,162 @@
+\documentclass{article}
+\usepackage{amssymb} % Required for inserting images
+\usepackage{amsmath}
+
+\title{Understanding of Model Predictive Control}
+\author{han}
+\date{February 2026}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction to MPC}
+\paragraph{Discussion Scope}MPC can be classified in several ways -- for instance, by linearity, continuous or discrete time, finite or infinite horizon. In this article, we discuss MPC into two categories: linear and nonlinear.
+\subsection{MPC basics}
+The basic concept of model predictive control is to predict system behavior based on a certain model, and optimize the prediction to achieve given objective. Personally, I divide it to three parts -- dynamic model, objective, and sliding optimization process.
+\subsubsection{Dynamic Model}
+Most models are continuous time models, nonlinear models are expressed as
+\[ \frac{dx}{dt} = f(x,u,t) \]
+And linear dynamic models are
+\[\frac{dx}{dt}=Ax + Bu\]
+\[x_{k+1} = Ax_k +B u_k\]
+\subsubsection{Objective}
+Typically, objective is to reduce energy consumption -- reduce output quantity and output variation, make trajectory approach the reference, and get to the target. If reference is not given, we can set it to be an average distribution between the initial state and the target state, or just the target. Weight matrices can be adjusted to prioritize some element.
+The objective function is
+\[J(x(0),u)=\sum_{k=0}^{N-1}[x(k)'Qx(k)+u(k)'Ru(k)] + x(N)'Fx(N)\]
+
+\paragraph{Computation}
+Control outputs are obtained through solving the objective function. When it comes to linear MPC, the solving process is a quadratic programming problem, which is more efficient. But for NMPC, it must be solved numerically.
+
+\subsubsection{Sliding optimization process}
+Sliding optimization is the key of MPC. Its principle is to predict future behaviors based on the equation of state, optimize the forecast to obtain the optimal control series, and only output the first control value. 
+\paragraph{Mathematical reasoning based on linear system}Given that prediction horizon($N_p$) equals control horizon($N_c$), future states can be estimated according to $x_{k+1} = Ax_k +B u_k$ and initial state
+\[x_{k+1} = Ax_k+Bu_k\]
+\[x_{k+2}=A^2x_k+ABu_k+Bu_{k+1}\]
+\[x_{k+3} = A^3x_k+A^2Bu_k+ABu_{k+1}+Bu_{k+2}\]
+Then define two matrices
+\[
+X_k = \begin{bmatrix}
+x_k\\
+x_{k+1}\\
+x_{k+2}\\
+...\\
+x_{k+N}
+\end{bmatrix}
+, \qquad U_k = \begin{bmatrix}
+u_k\\
+u_{k+1}\\
+u_{k+2}\\
+...\\
+u_{k+N-1}
+\end{bmatrix}
+\]
+we can obtain 
+\[
+X_k = \begin{bmatrix}
+I\\
+A\\
+A^2\\
+...\\
+A^N
+\end{bmatrix}x_k
++ \begin{bmatrix}
+0&0&0&...&0\\
+B&0&0&...&0\\
+AB&B&0&...&0\\
+A^2B&AB&B&...&0\\
+...&...&...&...&0\\
+A^{N-1}B &...&...&...&B
+\end{bmatrix}U_k
+\]
+\[X_k = Mx_k +CU_k\]
+The objective equation can therefore be expressed as
+\[
+J = X_k^T\begin{bmatrix}
+Q\\
+&Q\\
+&&Q\\
+&&&...\\
+&&&&F
+\end{bmatrix}X_k+U_k^T\begin{bmatrix}
+R\\
+&R\\
+&&R\\
+&&&...\\
+&&&&R
+\end{bmatrix}U_k
+\]
+\[J=X_k^T\overline{Q}X_k+U_k^T\overline{R}U_k\]
+Then substitute $X_k = Mx_k +CU_k$ into it
+\[J=x_k^TM^T\overline{Q}Mx_k+2x_k^TC^T\overline{Q}MU_k+U_k^T(C^T\overline{Q}C+R)U_k\]
+\[J=x_k^TGx_k+2x_k^TEU_k+U_k^THU_k\]
+Since we are solving for the best $U_k$, the first term $x_k^TGx_k$ can be dropped for now. We obtain the optimal control formula to be solved
+\[J = \frac{1}{2}U_k^THU_k+x_k^TEU_k\]
+We write in this form because in many solvers, they solve based on such form
+\[J=\frac{1}{2}U^THU+f^TU\]
+
+
+\section{Modeling}
+\paragraph{Inverted pendulum} 
+The physical formula of the inverted pendulum is
+\[\left\{
+\begin{array}{c}
+(M+m)\ddot{x}+m l \sin(q)\dot{\phi}^{2}-m l\cos (q)\ddot{\phi}=F\\
+m l^{2}\ddot{\phi}-m l\cos (q)\ddot{x}-m g l\sin(\phi)=0
+\end{array}
+\right.\]
+
+
+\subsection{MPC linear inverted pendulum}
+To linearize the inverted object placed at any angle, we assume
+\[
+q = q_0 + \Delta q, \quad
+\dot{\theta} = \dot{\theta}_0 + \Delta \dot{\theta}, \quad
+\ddot{\theta} = \ddot{\theta}_0 + \Delta \ddot{\theta},\quad
+\ddot{x} = \ddot{x}_0 + \Delta \ddot{x} ,\quad
+F = F_7 + \Delta F
+\]
+\begin{gather*} 
+\sin(q) = \sin(q_0 + \Delta q)
+\approx \sin(q_0) + \cos(q_0)\,\Delta \\
+\cos(q) = \cos(q_0 + \Delta q)
+\approx \cos(q_0) - \sin(q_0)\,\Delta q
+\end{gather*}
+\begin{multline*}
+\dot{\theta}^2
+= (\dot{\theta}_0 + \Delta \dot{\theta})^2 
+= \dot{\theta}_0^2 + 2\dot{\theta}_0 \Delta \dot{\theta}
++ (\Delta \dot{\theta})^2 
+\approx \dot{\theta}_0^2 + 2\dot{\theta}_0 \Delta \dot{\theta}
+\end{multline*}
+Then it can be derived
+\begin{align}
+&(M + m)(\ddot{x}_7 + \Delta \ddot{x}) 
++ ml\,[\sin(q_7) + \cos(q_7)\Delta q]
+[\dot{\theta}_7^2 + 2\dot{\theta}_7\Delta \dot{\theta}] 
+- ml\,[\cos(q_7) - \sin(q_7)\Delta q]
+(\ddot{\theta}_7 + \Delta \ddot{\theta})
+= F_7 + \Delta F
+\end{align}
+\begin{align}
+ml^2(\ddot{\theta}_7 + \Delta \ddot{\theta})
+&- ml[\cos(q_7) - \sin(q_7)\Delta q]
+(\ddot{x}_7 + \Delta \ddot{x}) - mgl[\sin(q_7) + \cos(q_7)\Delta q] = 0
+\end{align}
+
+We assume if the system is stable at given angle, $\dot{\theta}, \ddot{\theta}, \dot{x} $
+
+
+\subsection{Direct Collocation -- nonlinear inverted pendulum}
+\paragraph{Transcription} When dealing with continuous-time nonlinear model, it's necessary to discretize the model through transcription. Transcription methods include simultaneous methods and shooting methods, and Direct Collocation is a kind of simultaneous method.
+\paragraph{Offline planning} For this method, if it's imposed on a robot, whose state need to be detected at intervals, then it can be called online rolling optimization. In every interval, obtain the state, use Direct Collocation to forecast future steps, and only execute the first u. But for this inverted pendulum model, it's actually open-loop. The optimal control series is all found at one.
+\subsubsection{Initialization}
+In this stage, we need to make a guess on physical quantities at every discrete step. Quantity of state like distance and theta can be approximated by linear model. Quantity of process like velocity and angular velocity can be set to all zeros.
+\subsubsection{Constraints}
+\paragraph{Boundary} The first position should be at the origin, and the final position should be at the target.
+\paragraph{Dynamic Constraint} Consecutive steps should obey the physics rule. 
+\subsubsection{Objective} Minimun energy consumption --  minimun $\sum{u^2}$.
+
+\section{Mathematical Understanding of Solving Minimal Cost Function}
+
+\end{document}
